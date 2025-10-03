@@ -1,0 +1,39 @@
+{
+    "name": "windows-observer",
+    "version": "1.0.0",
+    "description": "Windows Observer - HDMI CEC監視アプリケーション",
+    "main": "index.js",
+    "scripts": {
+        "start": "node index.js",
+        "start:pm2": "pm2 start index.js --name tv-state-local",
+        "stop:pm2": "pm2 stop tv-state-local",
+        "restart:pm2": "pm2 restart tv-state-local",
+        "status:pm2": "pm2 status",
+        "logs:pm2": "pm2 logs tv-state-local",
+        "dev": "nodemon index.js",
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "keywords": [
+        "hdmi",
+        "cec",
+        "windows",
+        "monitor",
+        "observer"
+    ],
+    "author": "",
+    "license": "MIT",
+    "dependencies": {
+        "node-libcec": "^0.1.0",
+        "express": "^4.18.2",
+        "cors": "^2.8.5",
+        "dotenv": "^16.3.1",
+        "ws": "^8.14.2",
+        "pm2": "^5.3.0"
+    },
+    "devDependencies": {
+        "nodemon": "^3.0.1"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    }
+}
