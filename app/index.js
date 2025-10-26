@@ -15,8 +15,7 @@ import {
 
 // ---- 設定 ----
 const PORT = parseInt(process.env.PORT || '8765', 10);
-const CEC = process.env.CEC_CLIENT_PATH ||
-  'C:\\Program Files (x86)\\Pulse-Eight\\USB-CEC Adapter\\cec-client.exe'; // 既定パス
+const CEC = process.env.CEC_CLIENT_PATH || 'C:\\Program Files (x86)\\Pulse-Eight\\USB-CEC Adapter\\cec-client.exe'; // 既定パス
 const TV_ADDR = process.env.CEC_LOGICAL_ADDR || '0'; // 0 = TV
 const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
 const LOG_FILE = process.env.LOG_FILE || join(process.cwd(), 'logs', 'app.log');

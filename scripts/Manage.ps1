@@ -1,4 +1,4 @@
-# TV State Local 管理スクリプト
+﻿# TV State Local 管理スクリプト
 param(
     [Parameter(Mandatory=$true)]
     [ValidateSet("start", "stop", "restart", "status", "logs", "install")]
