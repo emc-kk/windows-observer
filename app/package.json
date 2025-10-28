@@ -1,7 +1,7 @@
 {
     "name": "windows-observer",
     "version": "1.0.0",
-    "description": "Windows Observer - HDMI CEC監視アプリケーション",
+    "description": "Windows Observer",
     "main": "index.js",
     "type": "module",
     "scripts": {
@@ -17,7 +17,6 @@
     },
     "keywords": [
         "hdmi",
-        "cec",
         "windows",
         "monitor",
         "observer"

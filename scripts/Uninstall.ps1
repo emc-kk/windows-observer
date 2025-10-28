@@ -8,35 +8,6 @@ function Test-Administrator {
   return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
-function Uninstall-LibCEC {
-  try {
-    Write-Host "libCEC のアンインストールを試行中..."
-
-    # インストール済みのlibCECを検索
-    $libcecProducts = Get-WmiObject -Class Win32_Product | Where-Object { $_.Name -like "*libCEC*" }
-
-    if ($libcecProducts) {
-      foreach ($product in $libcecProducts) {
-        Write-Host "libCEC を削除中: $($product.Name) (バージョン: $($product.Version))"
-        $result = $product.Uninstall()
-
-        if ($result.ReturnValue -eq 0) {
-          Write-Host "libCEC のアンインストールが完了しました: $($product.Name)"
-        } else {
-          Write-Warning "libCEC のアンインストールに失敗しました: ReturnValue = $($result.ReturnValue)"
-        }
-      }
-      return $true
-    } else {
-      Write-Host "libCEC はインストールされていません。"
-      return $true
-    }
-  } catch {
-    Write-Warning "libCEC のアンインストール中にエラーが発生しました: $_"
-    return $false
-  }
-}
-
 # 管理者権限チェック
 if (-not (Test-Administrator)) {
   Write-Warning "このスクリプトは管理者権限で実行する必要があります。"
@@ -101,13 +72,7 @@ try {
   Write-Warning "Node.jsプロセス停止でエラー: $_"
 }
 
-# 5) libCECのアンインストール（オプション）
-$response = Read-Host "libCEC もアンインストールしますか？ (y/N)"
-if ($response -eq 'y' -or $response -eq 'Y') {
-  Uninstall-LibCEC
-} else {
-  Write-Host "libCEC はそのまま残します。"
-}
+# 5) TODO: controlMyMonitorのアンインストール
 
 # 6) ログファイルの削除確認（アプリケーションディレクトリ削除前）
 $logDir = Join-Path $appDst "logs"

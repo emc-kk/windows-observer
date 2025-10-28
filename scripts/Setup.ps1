@@ -27,7 +27,6 @@ function Get-EnvValue {
 
 # 定数定義
 $envTemplate = Join-Path $appDir ".env.template"
-$cecClientExeDefault = Get-EnvValue -FilePath $envTemplate -Key "CEC_CLIENT_PATH"
 $tvKioskUrl = Get-EnvValue -FilePath $envTemplate -Key "TV_KIOSK_URL"
 $firewallRuleName = "tv-state-local 8765"
 $pm2ScheduleTaskName = "tv-state-local"
@@ -36,7 +35,6 @@ $kioskScheduleTaskName = "tv-kiosk-edge"
 # 状態チェック（定数として定義）
 $hasWinget = (Get-Command winget -ErrorAction SilentlyContinue) -ne $null
 $hasNode = (Get-Command node -ErrorAction SilentlyContinue) -ne $null
-$hasLibCEC = if ($cecClientExeDefault) { Test-Path $cecClientExeDefault } else { $false }
 
 # Helper functions (continued)
 function Test-Administrator {
@@ -54,49 +52,6 @@ function Install-Winget {
   } catch {
     Write-Warning "winget のインストールに失敗しました: $_"
     Write-Host "手動でMicrosoft Storeからインストールしてください。"
-    return $false
-  }
-}
-
-function Install-LibCEC {
-  Write-Host "libCEC をGitHubからダウンロード・インストール中..."
-
-  try {
-    $libcecVersion = "6.0.2"
-    $downloadUrl = "https://github.com/Pulse-Eight/libcec/releases/download/libcec-$libcecVersion/libcec-$libcecVersion.exe"
-    $tempDir = [System.IO.Path]::GetTempPath()
-    $exePath = Join-Path $tempDir "libcec-$libcecVersion.exe"
-
-    Write-Host "libCEC v$libcecVersion をダウンロード中..."
-    Write-Host "URL: $downloadUrl"
-
-    # ダウンロード実行
-    Invoke-WebRequest -Uri $downloadUrl -OutFile $exePath -UseBasicParsing
-    Write-Host "ダウンロード完了: $exePath"
-
-    # ダウンロードしたEXEをサイレントインストール
-    Write-Host "libCEC をサイレントインストール中..."
-
-    # 複数のサイレントパラメータを試行
-    $silentArgs = @("/S", "/SILENT", "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/NOCANCEL")
-
-    try {
-      # 最初にNSISタイプのサイレントインストールを試行
-      Start-Process -FilePath $exePath -ArgumentList $silentArgs -Wait -WindowStyle Hidden
-      Write-Host "サイレントインストール完了"
-    } catch {
-      Write-Warning "サイレントインストールに失敗しました。通常インストールを試行します..."
-      Start-Process -FilePath $exePath -ArgumentList "/S" -Wait
-    }
-
-    # 一時ファイルをクリーンアップ
-    Remove-Item $exePath -ErrorAction SilentlyContinue
-
-    Write-Host "libCEC のダウンロード・インストールが完了しました。"
-    return $true
-  } catch {
-    Write-Warning "libCEC のダウンロード・インストールに失敗しました: $_"
-    Write-Host "手動でhttps://github.com/Pulse-Eight/libcec/releases からダウンロードしてください。"
     return $false
   }
 }
@@ -181,13 +136,7 @@ if (-not $hasWinget) {
   Write-Host "winget は既にインストールされています。"
 }
 
-# libCECのインストール
-if (-not $hasLibCEC) {
-  Write-Host "libCEC が見つかりません。インストールを試行します..."
-  Install-LibCEC
-} else {
-  Write-Host "libCEC は既に存在します。"
-}
+# TODO: ControlMyMonitorのインストール
 
 # Node.jsのインストール
 if (-not $hasNode) {
