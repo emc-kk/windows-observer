@@ -151,11 +151,7 @@ Write-Host "アプリを配置: $appDst"
 New-Item -Force -ItemType Directory $appDst | Out-Null
 Copy-Item -Recurse -Force (Join-Path $appDir "*") $appDst
 
-# 5) ログディレクトリ作成
-$logsDir = Join-Path $appDst "logs"
-New-Item -Force -ItemType Directory $logsDir | Out-Null
-
-# 6) .env 作成（無ければテンプレから）
+# 5) .env 作成（無ければテンプレから）
 $envPath = Join-Path $appDst ".env"
 if (!(Test-Path $envPath)) {
   $tpl = Join-Path $appDir ".env.template"
@@ -165,7 +161,7 @@ if (!(Test-Path $envPath)) {
   Write-Host ".env は既に存在: $envPath"
 }
 
-# 7) npm install（失敗しても続行）
+# 6) npm install（失敗しても続行）
 try {
   Push-Location $appDst
   # Node.jsインストール後のPATH更新とnpm確認
@@ -206,7 +202,7 @@ try {
   Pop-Location
 }
 
-# 8) PM2によるデーモン化設定
+# 7) PM2によるデーモン化設定
 try {
   Write-Host "PM2 を使用してデーモン化を設定中..."
   Push-Location $appDst
@@ -227,7 +223,7 @@ try {
   Pop-Location
 }
 
-# 9) Firewall（ローカルポート8765）
+# 8) Firewall（ローカルポート8765）
 if (-not (Get-NetFirewallRule -DisplayName $firewallRuleName -ErrorAction SilentlyContinue)) {
   New-NetFirewallRule -DisplayName $firewallRuleName -Direction Inbound -Protocol TCP -LocalPort 8765 -Action Allow | Out-Null
   Write-Host "Firewall 例外を登録: $firewallRuleName"
@@ -250,7 +246,7 @@ if (-not $tvKioskUrl) {
   }
 }
 
-# 10) すぐ起動確認
+# 9) すぐ起動確認
 try {
   # PM2でプロセス管理されているため既に起動済み
   Write-Host "PM2 プロセス管理で起動済み"

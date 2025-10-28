@@ -2,7 +2,7 @@
     "name": "windows-observer",
     "version": "1.0.0",
     "description": "Windows Observer",
-    "main": "index.js",
+    "main": "./src/index.js",
     "type": "module",
     "scripts": {
         "pm2:start": "pm2 start ecosystem.config.cjs",
@@ -12,8 +12,8 @@
         "restart:pm2": "pm2 restart tv-state-local",
         "status:pm2": "pm2 status",
         "logs:pm2": "pm2 logs tv-state-local",
-        "start": "node index.js",
-        "dev": "nodemon index.js"
+        "start": "node ./src/index.js",
+        "dev": "nodemon ./src/index.js"
     },
     "keywords": [
         "hdmi",

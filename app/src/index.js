@@ -5,43 +5,27 @@
 import express from 'express';
 import morgan from 'morgan';
 import cors from 'cors';
-import {
-  execFile
-} from 'child_process';
+import { execFile } from 'child_process';
+import { join } from 'path';
 import {
   existsSync,
   writeFileSync,
   appendFileSync
 } from 'fs';
-import {
-  join
-} from 'path';
 
 // ---- 設定 ----
-const PORT = parseInt(process.env.PORT || '8765', 10);
-const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
-const LOG_FILE = process.env.LOG_FILE || join(process.cwd(), 'logs', 'app.log');
+const PORT = parseInt(process.env.PORT, 10);
+const LOG_LEVEL = process.env.LOG_LEVEL
+const LOG_FILE = process.env.LOG_FILE
 
-// ログディレクトリの作成 # TODO: 最初から配置しておく
-const logDir = join(process.cwd(), 'logs');
-if (!existsSync(logDir)) {
-  try {
-    require('fs').mkdirSync(logDir, { recursive: true });
-  } catch (e) {
-    console.warn('[WARN] ログディレクトリの作成に失敗:', e.message);
-  }
-}
+const requestCounts = new Map();
+const RATE_LIMIT_WINDOW = 60000; // 1分
+const RATE_LIMIT_MAX = 100; // 最大リクエスト数
 
 // ---- ユーティリティ ----
-
 function log(level, message, data = null) {
   const timestamp = new Date().toISOString();
-  const logEntry = {
-    timestamp,
-    level,
-    message,
-    data
-  };
+  const logEntry = { timestamp, level, message, data };
 
   console.log(`[${level.toUpperCase()}] ${message}`, data || '');
 
@@ -53,10 +37,6 @@ function log(level, message, data = null) {
 }
 
 // レート制限（簡易版）
-const requestCounts = new Map();
-const RATE_LIMIT_WINDOW = 60000; // 1分
-const RATE_LIMIT_MAX = 100; // 最大リクエスト数
-
 function rateLimit(req, res, next) {
   const clientIp = req.ip || req.connection.remoteAddress;
   const now = Date.now();
@@ -104,21 +84,24 @@ app.use(express.json({ limit: '1mb'}));
 app.use(morgan('combined'));
 
 app.get('/health', async (req, res) => {
-  const uptime = process.uptime();
+  const timestamp = new Date().toISOString();
+  const uptime = Math.floor(process.uptime());
   const memoryUsage = process.memoryUsage();
+  const memoryUsageMb = Math.round(memoryUsage.heapUsed / 1024 / 1024);
+  const memoryTotalMb = Math.round(memoryUsage.heapTotal / 1024 / 1024);
   const cmmHealthy = true; // TODO: CMMの状態チェック
+  const statusCode = cmmHealthy ? 200 : 503;
 
   const health = {
     ok: cmmHealthy,
-    timestamp: new Date().toISOString(),
-    uptime: Math.floor(uptime),
+    timestamp,
+    uptime,
     memory: {
-      used: Math.round(memoryUsage.heapUsed / 1024 / 1024),
-      total: Math.round(memoryUsage.heapTotal / 1024 / 1024)
+      used: memoryUsageMb,
+      total: memoryTotalMb
     },
   };
 
-  const statusCode = cmmHealthy ? 200 : 503;
   res.status(statusCode).json(health);
 });
 

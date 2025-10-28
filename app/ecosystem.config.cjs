@@ -1,7 +1,7 @@
 module.exports = {
     apps: [{
         name: 'tv-state-local',
-        script: 'index.js',
+        script: './src/index.js',
         instances: 1,
         autorestart: true,
         watch: false,
