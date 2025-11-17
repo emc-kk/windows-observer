@@ -3,8 +3,6 @@
 Windows環境でテレビの電源状態を監視・制御するアプリケーションです。
 
 ## 機能
-TODO: 整理
-
 - **テレビ電源状態の監視**: CMM経由でテレビの電源状態を取得
 - **RESTful API**: HTTP API経由での操作
 - **自動起動**: WindowsタスクスケジューラまたはPM2によるデーモン化
@@ -17,23 +15,22 @@ TODO: 整理
 
 ## セットアップ
 
-```batch
-# 管理者権限で実行
-Setup.bat
-```
+Setup.batファイルを管理者権限で実行
+
+※ アンインストールする場合はUninstall.batを使用
 
 ## 使用方法
 
 ### API エンドポイント
 
-#### ヘルスチェック
+ヘルスチェック
 ```http
 GET /health
 ```
 
-#### テレビ電源状態取得
+テレビ電源状態取得
 ```http
-GET /tv
+GET /tv-state
 ```
 
 ### サービス管理
@@ -41,19 +38,19 @@ GET /tv
 #### PM2を使用する場合
 ```bash
 # サービス開始
-npm run start:pm2
+npm run pm2:start
 
 # サービス停止
-npm run stop:pm2
+npm run pm2:stop
 
 # サービス再起動
-npm run restart:pm2
+npm run pm2:restart
 
 # 状態確認
-npm run status:pm2
+npm run pm2:status
 
 # ログ確認
-npm run logs:pm2
+npm run pm2:logs
 ```
 
 #### PowerShellスクリプトを使用する場合
@@ -74,32 +71,6 @@ npm run logs:pm2
 .\scripts\Manage.ps1 -Action logs
 ```
 
-## 設定
-
-### ログレベル
-
-- `error`: エラーのみ
-- `warn`: 警告以上
-- `info`: 情報以上（推奨）
-- `debug`: デバッグ情報含む
-
-## トラブルシューティング
-### ログの確認
-
-```bash
-# アプリケーションログ
-type logs\app.log
-
-# PM2ログ
-npm run logs:pm2
-```
-
-## アンインストール
-
-```powershell
-# 管理者権限で実行
-.\scripts\Uninstall.ps1
-```
 
 ## ライセンス
 
