@@ -1,72 +1,218 @@
-#requires -version 5
-# 1) 管理者確認
-If (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(`
-    [Security.Principal.WindowsBuiltInRole] "Administrator")) {
-  Write-Error "管理者で実行してください。"
-  exit 1
-}
+﻿#requires -version 5
 
 $ErrorActionPreference = "Stop"
+
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $root = Split-Path -Parent $here
-$appSrc = Join-Path $root "app"
+$appDir = Join-Path $root "app"
+
+# インストール先
 $appDst = "C:\Program Files\tv-state-local"
-$scripts = Join-Path $root "scripts"
-$installDir = Join-Path $root "install"
-$cecMsi = Get-ChildItem -Path (Join-Path $installDir "libcec-setup") -Filter *.msi -ErrorAction SilentlyContinue | Select-Object -First 1
-$nodeMsi = Get-ChildItem -Path (Join-Path $installDir "node-setup") -Filter *.msi -ErrorAction SilentlyContinue | Select-Object -First 1
+
+# Helper functions
+function Get-EnvValue {
+  param([string]$FilePath, [string]$Key)
+
+  if (!(Test-Path $FilePath)) { return $null }
+
+  # UTF-8で読み込み
+  $content = Get-Content $FilePath -Encoding UTF8 -ErrorAction SilentlyContinue
+  foreach ($line in $content) {
+    $line = $line.Trim()
+    if ($line -match "^$Key\s*=\s*(.*)$") {
+      $value = $matches[1].Trim().Trim('"')
+      # 空文字列の場合はnullを返す
+      if ([string]::IsNullOrWhiteSpace($value)) {
+        return $null
+      }
+      return $value
+    }
+  }
+  return $null
+}
+
+# 定数定義
+$envTemplate = Join-Path $appDir ".env.template"
+$cecClientExeDefault = Get-EnvValue -FilePath $envTemplate -Key "CEC_CLIENT_PATH"
+$tvKioskUrl = Get-EnvValue -FilePath $envTemplate -Key "TV_KIOSK_URL"
+$firewallRuleName = "tv-state-local 8765"
+$pm2ScheduleTaskName = "tv-state-local"
+$kioskScheduleTaskName = "tv-kiosk-edge"
+
+# 状態チェック（定数として定義）
+$hasWinget = (Get-Command winget -ErrorAction SilentlyContinue) -ne $null
+$hasNode = (Get-Command node -ErrorAction SilentlyContinue) -ne $null
+$hasLibCEC = if ($cecClientExeDefault) { Test-Path $cecClientExeDefault } else { $false }
+
+# Helper functions (continued)
+function Test-Administrator {
+  $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
+  $principal = New-Object Security.Principal.WindowsPrincipal($currentUser)
+  return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Install-Winget {
+  Write-Host "winget をインストール中..."
+  try {
+    Add-AppxPackage -RegisterByFamilyName -MainPackage Microsoft.DesktopAppInstaller_8wekyb3d8bbwe
+    Write-Host "winget のインストールが完了しました。"
+    return $true
+  } catch {
+    Write-Warning "winget のインストールに失敗しました: $_"
+    Write-Host "手動でMicrosoft Storeからインストールしてください。"
+    return $false
+  }
+}
+
+function Install-LibCEC {
+  Write-Host "libCEC をGitHubからダウンロード・インストール中..."
+
+  try {
+    $libcecVersion = "6.0.2"
+    $downloadUrl = "https://github.com/Pulse-Eight/libcec/releases/download/libcec-$libcecVersion/libcec-$libcecVersion.exe"
+    $tempDir = [System.IO.Path]::GetTempPath()
+    $exePath = Join-Path $tempDir "libcec-$libcecVersion.exe"
+
+    Write-Host "libCEC v$libcecVersion をダウンロード中..."
+    Write-Host "URL: $downloadUrl"
+
+    # ダウンロード実行
+    Invoke-WebRequest -Uri $downloadUrl -OutFile $exePath -UseBasicParsing
+    Write-Host "ダウンロード完了: $exePath"
+
+    # ダウンロードしたEXEをサイレントインストール
+    Write-Host "libCEC をサイレントインストール中..."
+
+    # 複数のサイレントパラメータを試行
+    $silentArgs = @("/S", "/SILENT", "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/NOCANCEL")
+
+    try {
+      # 最初にNSISタイプのサイレントインストールを試行
+      Start-Process -FilePath $exePath -ArgumentList $silentArgs -Wait -WindowStyle Hidden
+      Write-Host "サイレントインストール完了"
+    } catch {
+      Write-Warning "サイレントインストールに失敗しました。通常インストールを試行します..."
+      Start-Process -FilePath $exePath -ArgumentList "/S" -Wait
+    }
+
+    # 一時ファイルをクリーンアップ
+    Remove-Item $exePath -ErrorAction SilentlyContinue
+
+    Write-Host "libCEC のダウンロード・インストールが完了しました。"
+    return $true
+  } catch {
+    Write-Warning "libCEC のダウンロード・インストールに失敗しました: $_"
+    Write-Host "手動でhttps://github.com/Pulse-Eight/libcec/releases からダウンロードしてください。"
+    return $false
+  }
+}
+
+function Install-NodeJS {
+  Write-Host "Node.js をwingetでインストール中..."
+
+  try {
+    # wingetでインストール
+    winget install -e --id OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements --silent
+    Write-Host "Node.js のインストールが完了しました。"
+    return $true
+  } catch {
+    Write-Warning "Node.js のインストールに失敗しました: $_"
+    Write-Host "手動でhttps://nodejs.org からダウンロードしてインストールしてください。"
+    return $false
+  }
+}
+
+function Register-KioskTask {
+  param([string]$TaskName, [string]$Url, [string]$EdgePath)
+
+  $kioskArgs = "--kiosk `"$Url`" --edge-kiosk-type=fullscreen --no-first-run --disable-features=msEdgeTabPreloading"
+  $trigger = New-ScheduledTaskTrigger -AtLogOn
+  $principal = New-ScheduledTaskPrincipal -UserId "$env:USERNAME" -RunLevel Highest
+
+  try {
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+    $edgeAction = New-ScheduledTaskAction -Execute $EdgePath -Argument $kioskArgs -WorkingDirectory "C:\"
+    Register-ScheduledTask -TaskName $TaskName -Action $edgeAction -Trigger $trigger -Principal $principal | Out-Null
+    Write-Host "キオスクタスク登録: $TaskName"
+    return $true
+  } catch {
+    Write-Warning "キオスクタスク登録失敗: $_"
+    return $false
+  }
+}
+
+function Register-PM2AutoStart {
+  param([string]$TaskName, [string]$AppPath)
+
+  try {
+    $pm2RestoreScript = Join-Path $AppPath "pm2-restore.bat"
+
+    # 既存のタスクを削除（エラーは無視）
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+
+    # 新しいタスクを作成（システム起動時に実行）
+    $trigger = New-ScheduledTaskTrigger -AtStartup
+    $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -RunLevel Highest
+    $action = New-ScheduledTaskAction -Execute $pm2RestoreScript
+
+    Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal | Out-Null
+
+    Write-Host "PM2自動起動タスクが正常に登録されました: $TaskName"
+    Write-Host "システム再起動後、PM2プロセスが自動的に復元されます"
+
+  } catch {
+    Write-Warning "PM2自動起動設定中にエラーが発生しました: $_"
+  }
+}
 
 Write-Host "=== tv-state-local セットアップ開始 ==="
 
-# 2) libCEC (cec-client) インストール（サイレント）
-$cecClientExeDefault = "C:\Program Files (x86)\Pulse-Eight\USB-CEC Adapter\cec-client.exe"
-if (!(Test-Path $cecClientExeDefault)) {
-  if ($cecMsi) {
-    Write-Host "libCEC をインストール中: $($cecMsi.FullName)"
-    Start-Process "msiexec.exe" -ArgumentList "/i `"$($cecMsi.FullName)`" /qn /norestart" -Wait
-  } else {
-    Write-Warning "libCEC インストーラが見つかりませんでした。後で手動導入してください。"
-  }
-} else {
-  Write-Host "libCEC は既に存在: $cecClientExeDefault"
+# 管理者権限チェック
+if (-not (Test-Administrator)) {
+  Write-Warning "このスクリプトは管理者権限で実行する必要があります。"
+  Write-Host "Setup.batを右クリックして「管理者として実行」を選択してください。"
+  exit 1
 }
 
-# 3) Node.js 導入（優先: winget / 次: 同梱MSI）
-function Have-Winget { (Get-Command winget -ErrorAction SilentlyContinue) -ne $null }
-function Have-Node { (Get-Command node -ErrorAction SilentlyContinue) -ne $null }
+Write-Host "管理者権限を確認しました。"
 
-if (-not (Have-Node)) {
-  if (Have-Winget) {
-    Write-Host "Node.js LTS を winget で導入します"
-    winget install -e --id OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements --silent
-  } elseif ($nodeMsi) {
-    Write-Host "Node.js をMSIで導入します: $($nodeMsi.FullName)"
-    Start-Process "msiexec.exe" -ArgumentList "/i `"$($nodeMsi.FullName)`" /qn /norestart" -Wait
-  } else {
-    Write-Warning "Node.js が見つからず導入もできませんでした。手動でインストールしてください。"
+# wingetのインストール確認
+if (-not $hasWinget) {
+  Write-Host "winget が見つかりません。インストールを試行します..."
+  if (-not (Install-Winget)) {
+    Write-Warning "winget のインストールに失敗しました。続行できません。"
+    exit 1
   }
 } else {
-  Write-Host "Node.js は既に導入済み"
+  Write-Host "winget は既にインストールされています。"
+}
+
+# libCECのインストール
+if (-not $hasLibCEC) {
+  Write-Host "libCEC が見つかりません。インストールを試行します..."
+  Install-LibCEC
+} else {
+  Write-Host "libCEC は既に存在します。"
+}
+
+# Node.jsのインストール
+if (-not $hasNode) {
+  Write-Host "Node.js が見つかりません。インストールを試行します..."
+  Install-NodeJS
+} else {
+  Write-Host "Node.js は既に導入済みです。"
 }
 
 # 4) アプリ配置
 Write-Host "アプリを配置: $appDst"
 New-Item -Force -ItemType Directory $appDst | Out-Null
-Copy-Item -Recurse -Force (Join-Path $appSrc "*") $appDst
+Copy-Item -Recurse -Force (Join-Path $appDir "*") $appDst
 
 # 5) .env 作成（無ければテンプレから）
 $envPath = Join-Path $appDst ".env"
 if (!(Test-Path $envPath)) {
-  $tpl = Join-Path $appSrc ".env.template"
-  if (Test-Path $tpl) {
-    Copy-Item $tpl $envPath
-  } else {
-    @"
-CEC_CLIENT_PATH=$cecClientExeDefault
-PORT=8765
-CEC_LOGICAL_ADDR=0
-"@ | Out-File -Encoding utf8 $envPath
-  }
+  $tpl = Join-Path $appDir ".env.template"
+  Copy-Item $tpl $envPath
   Write-Host ".env を作成: $envPath"
 } else {
   Write-Host ".env は既に存在: $envPath"
@@ -75,105 +221,125 @@ CEC_LOGICAL_ADDR=0
 # 6) npm install（失敗しても続行）
 try {
   Push-Location $appDst
-  if (Test-Path "package.json") {
+  # Node.jsインストール後のPATH更新とnpm確認
+  Write-Host "npm コマンドの確認中..."
+
+  # PATH環境変数を更新（新しくインストールされたNode.jsを認識するため）
+  $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "User")
+
+  $npmRetries = 5
+  $npmFound = $false
+
+  for ($i = 1; $i -le $npmRetries; $i++) {
+    $npmCommand = Get-Command npm -ErrorAction SilentlyContinue
+    if ($npmCommand) {
+      Write-Host "npm コマンドが見つかりました: $($npmCommand.Source)"
+      $npmFound = $true
+      break
+    } else {
+      Write-Host "npm コマンド確認試行 $i/$npmRetries (5秒待機)..."
+      Start-Sleep -Seconds 5
+    }
+  }
+
+  if ($npmFound) {
     Write-Host "npm install 実行中..."
     npm install --silent
+    Write-Host "npm install が完了しました。"
+  } else {
+    Write-Warning "npm コマンドが見つかりませんでした。Node.js のインストールが完了していない可能性があります。"
+    Write-Host "後で手動で以下のコマンドを実行してください："
+    Write-Host "  cd `"$appDst`""
+    Write-Host "  npm install"
   }
-} catch { Write-Warning "npm install でエラー: $_" } finally { Pop-Location }
-
-# 7) Firewall（ローカルポート8765）
-$ruleName = "tv-state-local 8765"
-if (-not (Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue)) {
-  New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -Protocol TCP -LocalPort 8765 -Action Allow | Out-Null
-  Write-Host "Firewall 例外を登録: $ruleName"
-} else {
-  Write-Host "Firewall 例外は既に存在: $ruleName"
+} catch {
+  Write-Warning "npm install でエラー: $_"
+  Write-Host "後で手動で npm install を実行してください。"
+} finally {
+  Pop-Location
 }
 
-# 8) ログディレクトリ作成
-$logsDir = Join-Path $appDst "logs"
-New-Item -Force -ItemType Directory $logsDir | Out-Null
-
-# 9) PM2によるデーモン化設定
-$pm2Exe = (Get-Command pm2 -ErrorAction SilentlyContinue)?.Source
-if ($pm2Exe) {
+# 7) PM2によるデーモン化設定
+try {
   Write-Host "PM2 を使用してデーモン化を設定中..."
   Push-Location $appDst
-  try {
-    # PM2でプロセスを開始
-    & $pm2Exe start ecosystem.config.js
-    # PM2の自動起動設定
-    & $pm2Exe startup
-    & $pm2Exe save
-    Write-Host "PM2 デーモン化完了"
-  } catch { 
-    Write-Warning "PM2 設定失敗: $_"
-    # フォールバック: 従来のタスクスケジューラ方式
-    Write-Host "フォールバック: タスクスケジューラ方式を使用"
-    $taskName = "tv-state-local"
-    $nodeExe = (Get-Command node -ErrorAction SilentlyContinue)?.Source
-    if (-not $nodeExe) { $nodeExe = "node.exe" }
-    $action = New-ScheduledTaskAction -Execute $nodeExe -Argument "index.js" -WorkingDirectory $appDst
-    $trigger = New-ScheduledTaskTrigger -AtLogOn
-    $principal = New-ScheduledTaskPrincipal -UserId "$env:USERNAME" -RunLevel Highest
-    try {
-      Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
-      Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal | Out-Null
-      Write-Host "タスク登録: $taskName"
-    } catch { Write-Warning "タスク登録失敗: $_" }
-  } finally { Pop-Location }
+  # PM2でプロセスを開始
+  npm run pm2:start
+  npm run pm2:save
+
+  # Windows環境では pm2 startup は非対応のため、タスクスケジューラーを使用
+  Write-Host "Windows用のPM2自動起動設定を行います..."
+  Register-PM2AutoStart -TaskName $pm2ScheduleTaskName -AppPath $appDst
+
+  # PM2の現在の状態を保存
+  Write-Host "PM2 デーモン化完了"
+} catch {
+  Write-Error "PM2 設定に失敗しました。PM2は必須コンポーネントです: $_"
+  exit 1
+} finally {
+  Pop-Location
+}
+
+# 8) Firewall（ローカルポート8765）
+if (-not (Get-NetFirewallRule -DisplayName $firewallRuleName -ErrorAction SilentlyContinue)) {
+  New-NetFirewallRule -DisplayName $firewallRuleName -Direction Inbound -Protocol TCP -LocalPort 8765 -Action Allow | Out-Null
+  Write-Host "Firewall 例外を登録: $firewallRuleName"
 } else {
-  Write-Warning "PM2 が見つかりません。従来のタスクスケジューラ方式を使用します。"
-  # 従来のタスクスケジューラ方式
-  $taskName = "tv-state-local"
-  $nodeExe = (Get-Command node -ErrorAction SilentlyContinue)?.Source
-  if (-not $nodeExe) { $nodeExe = "node.exe" }
-  $action = New-ScheduledTaskAction -Execute $nodeExe -Argument "index.js" -WorkingDirectory $appDst
-  $trigger = New-ScheduledTaskTrigger -AtLogOn
-  $principal = New-ScheduledTaskPrincipal -UserId "$env:USERNAME" -RunLevel Highest
-  try {
-    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
-    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal | Out-Null
-    Write-Host "タスク登録: $taskName"
-  } catch { Write-Warning "タスク登録失敗: $_" }
+  Write-Host "Firewall 例外は既に存在: $firewallRuleName"
 }
 
 # （任意）Edge キオスクの自動起動タスク
-$kioskUrl = $env:TV_KIOSK_URL
-if ($kioskUrl) {
-  $edge = (Get-Command msedge -ErrorAction SilentlyContinue)?.Source
-  if ($edge) {
-    $kioskTask = "tv-kiosk-edge"
-    $kioskArgs = "--kiosk `"$kioskUrl`" --edge-kiosk-type=fullscreen --no-first-run --disable-features=msEdgeTabPreloading"
-    try {
-      Unregister-ScheduledTask -TaskName $kioskTask -Confirm:$false -ErrorAction SilentlyContinue
-      $edgeAction = New-ScheduledTaskAction -Execute $edge -Argument $kioskArgs -WorkingDirectory "C:\"
-      Register-ScheduledTask -TaskName $kioskTask -Action $edgeAction -Trigger $trigger -Principal $principal | Out-Null
-      Write-Host "キオスクタスク登録: $kioskTask"
-    } catch { Write-Warning "キオスクタスク登録失敗: $_" }
-  } else {
-    Write-Warning "Edge が見つかりません。キオスクタスクをスキップ。"
-  }
-} else {
+if (-not $tvKioskUrl) {
   Write-Host "TV_KIOSK_URL が未設定のためキオスク登録をスキップ。"
-}
+} else {
+  # Edge実行ファイル取得
+  $edgeCommand = Get-Command msedge -ErrorAction SilentlyContinue
+  $edgePath = if ($edgeCommand) { $edgeCommand.Source } else { $null }
 
-# 10) すぐ起動
-try {
-  if ($pm2Exe) {
-    # PM2でプロセス管理されている場合は既に起動済み
-    Write-Host "PM2 プロセス管理で起動済み"
+  if (-not $edgePath) {
+    Write-Warning "Edge が見つかりません。キオスクタスクをスキップ。"
   } else {
-    # 従来のタスクスケジューラ方式
-    Start-ScheduledTask -TaskName $taskName
+    Register-KioskTask -TaskName $kioskScheduleTaskName -Url $tvKioskUrl -EdgePath $edgePath
   }
-  Start-Sleep -Seconds 3
-  # 動作確認（ローカルで GET /health）
-  $resp = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:8765/health" -TimeoutSec 5
-  Write-Host "サーバ応答: $($resp.Content)"
-} catch {
-  Write-Warning "起動確認に失敗: $_"
 }
 
-Write-Host "=== セットアップ完了 ==="
-Read-Host "Enter を押して閉じます"
+# 9) すぐ起動確認
+try {
+  # PM2でプロセス管理されているため既に起動済み
+  Write-Host "PM2 プロセス管理で起動済み"
+
+  # サーバー起動待機とヘルスチェック
+  Write-Host "サーバーの起動を待機中..."
+  $maxRetries = 6
+  $retryDelay = 10
+  $success = $false
+
+  for ($i = 1; $i -le $maxRetries; $i++) {
+    Write-Host "起動確認試行 $i/$maxRetries (${retryDelay}秒間隔)..."
+    Start-Sleep -Seconds $retryDelay
+
+    try {
+      $resp = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:8765/health" -TimeoutSec 10
+      Write-Host "サーバ応答: $($resp.Content)"
+      Write-Host "ステータスコード: $($resp.StatusCode)"
+
+      # ステータスコード200でレスポンスがあれば成功とみなす
+      if ($resp.StatusCode -eq 200) {
+        $success = $true
+        Write-Host "サーバーが正常に応答しています"
+        break
+      }
+    } catch {
+      Write-Host "試行 $i 失敗: $($_.Exception.Message)"
+    }
+  }
+
+  if (-not $success) {
+    Write-Warning "サーバーの起動確認に失敗しました。手動で確認してください。"
+    Write-Host "ブラウザで http://127.0.0.1:8765/health にアクセスして確認できます。"
+  }
+} catch {
+  Write-Warning "起動処理でエラーが発生: $_"
+}
+
+Write-Host "=== tv-state-local セットアップ終了 ==="

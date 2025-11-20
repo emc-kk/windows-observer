@@ -1,22 +1,54 @@
-#requires -version 5
-# 管理者確認
-If (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(`
-    [Security.Principal.WindowsBuiltInRole] "Administrator")) {
-  Write-Error "管理者で実行してください。"
-  exit 1
-}
+﻿#requires -version 5
 
 $ErrorActionPreference = "Stop"
 
+function Test-Administrator {
+  $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
+  $principal = New-Object Security.Principal.WindowsPrincipal($currentUser)
+  return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Uninstall-LibCEC {
+  try {
+    Write-Host "libCEC のアンインストールを試行中..."
+
+    $uninstallExe = "C:\Program Files (x86)\Pulse-Eight\USB-CEC Adapter\uninstall_libcec.exe"
+
+    if (Test-Path $uninstallExe) {
+      Write-Host "アンインストーラーを検出: $uninstallExe" -ForegroundColor Green
+      Start-Process -FilePath $uninstallExe -ArgumentList "/S" -Wait -NoNewWindow
+      Write-Host "libCEC のアンインストールが完了しました"
+      return $true
+    } else {
+      Write-Host "libCEC のアンインストーラーが見つかりませんでした。"
+      return $true
+    }
+  } catch {
+    Write-Warning "libCEC のアンインストール中にエラーが発生しました: $_"
+    Write-Host "手動でコントロールパネルからアンインストールしてください。"
+    return $false
+  }
+}
+
+# 管理者権限チェック
+if (-not (Test-Administrator)) {
+  Write-Warning "このスクリプトは管理者権限で実行する必要があります。"
+  Write-Host "Setup.batを右クリックして「管理者として実行」を選択してください。"
+  exit 1
+}
+
+Write-Host "管理者権限を確認しました。"
+
 Write-Host "=== tv-state-local アンインストール開始 ==="
 
-$taskName = "tv-state-local"
-$kioskTask = "tv-kiosk-edge"
 $appDst = "C:\Program Files\tv-state-local"
-$ruleName = "tv-state-local 8765"
+$firewallRuleName = "tv-state-local 8765"
+$pm2ScheduleTaskName = "tv-state-local"
+$kioskScheduleTaskName = "tv-kiosk-edge"
 
 # 1) PM2プロセスの停止
-$pm2Exe = (Get-Command pm2 -ErrorAction SilentlyContinue)?.Source
+$pm2Command = Get-Command pm2 -ErrorAction SilentlyContinue
+$pm2Exe = if ($pm2Command) { $pm2Command.Source } else { $null }
 if ($pm2Exe) {
   try {
     Write-Host "PM2プロセスを停止中..."
@@ -29,36 +61,48 @@ if ($pm2Exe) {
   }
 }
 
-# 2) タスクスケジューラの削除
-try { 
-  Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue 
-  Write-Host "タスクスケジューラ削除: $taskName"
-} catch {}
-
-try { 
-  Unregister-ScheduledTask -TaskName $kioskTask -Confirm:$false -ErrorAction SilentlyContinue 
-  Write-Host "キオスクタスク削除: $kioskTask"
-} catch {}
-
-# 3) ファイアウォールルールの削除
-try { 
-  Remove-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue 
-  Write-Host "ファイアウォールルール削除: $ruleName"
-} catch {}
-
-# 4) Node.jsプロセスの停止
-try { 
-  Stop-Process -Name node -Force -ErrorAction SilentlyContinue 
-  Write-Host "Node.jsプロセス停止"
-} catch {}
-
-# 5) アプリケーションディレクトリの削除
-if (Test-Path $appDst) { 
-  Remove-Item -Recurse -Force $appDst
-  Write-Host "アプリケーションディレクトリ削除: $appDst"
+# 2) スケジュールタスクの削除
+# PM2自動起動タスクの削除
+try {
+  Unregister-ScheduledTask -TaskName $pm2ScheduleTaskName -Confirm:$false -ErrorAction SilentlyContinue
+  Write-Host "PM2自動起動タスク削除: $pm2ScheduleTaskName"
+} catch {
+  Write-Warning "PM2自動起動タスク削除でエラー: $_"
 }
 
-# 6) ログファイルの削除（オプション）
+# キオスクタスクの削除
+try {
+  Unregister-ScheduledTask -TaskName $kioskScheduleTaskName -Confirm:$false -ErrorAction SilentlyContinue
+  Write-Host "キオスクタスク削除: $kioskScheduleTaskName"
+} catch {
+  Write-Warning "キオスクタスク削除でエラー: $_"
+}
+
+# 3) ファイアウォールルールの削除
+try {
+  Remove-NetFirewallRule -DisplayName $firewallRuleName -ErrorAction SilentlyContinue
+  Write-Host "ファイアウォールルール削除: $firewallRuleName"
+} catch {
+  Write-Warning "ファイアウォールルール削除でエラー: $_"
+}
+
+# 4) Node.jsプロセスの停止
+try {
+  Stop-Process -Name node -Force -ErrorAction SilentlyContinue
+  Write-Host "Node.jsプロセス停止"
+} catch {
+  Write-Warning "Node.jsプロセス停止でエラー: $_"
+}
+
+# 5) libCECのアンインストール（オプション）
+$response = Read-Host "libCEC もアンインストールしますか？ (y/N)"
+if ($response -eq 'y' -or $response -eq 'Y') {
+  Uninstall-LibCEC
+} else {
+  Write-Host "libCEC はそのまま残します。"
+}
+
+# 6) ログファイルの削除確認（アプリケーションディレクトリ削除前）
 $logDir = Join-Path $appDst "logs"
 if (Test-Path $logDir) {
   $response = Read-Host "ログファイルも削除しますか？ (y/N)"
@@ -66,6 +110,12 @@ if (Test-Path $logDir) {
     Remove-Item -Recurse -Force $logDir
     Write-Host "ログファイル削除完了"
   }
+}
+
+# 7) アプリケーションディレクトリの削除
+if (Test-Path $appDst) {
+  Remove-Item -Recurse -Force $appDst
+  Write-Host "アプリケーションディレクトリ削除: $appDst"
 }
 
 Write-Host "=== アンインストール完了 ==="

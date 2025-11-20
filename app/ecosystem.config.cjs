@@ -1,7 +1,7 @@
 module.exports = {
     apps: [{
         name: 'tv-state-local',
-        script: 'index.js',
+        script: './dist/index.js',
         instances: 1,
         autorestart: true,
         watch: false,
@@ -10,9 +10,9 @@ module.exports = {
             NODE_ENV: 'production',
             PORT: 8765
         },
-        error_file: './logs/err.log',
-        out_file: './logs/out.log',
-        log_file: './logs/combined.log',
+        error_file: './log/err.log',
+        out_file: './log/out.log',
+        log_file: './log/combined.log',
         time: true
     }]
 };
