@@ -2,7 +2,7 @@
 ## 必要なもの
 - Windows 10/11
   - ※快適な作業、トラブルシューティングのため4つのUSBがあるものを推奨(マウス、キーボード、USB, USB-CECアダプター)
-- USB-CECアダブター
+- [USB-CECアダブター](https://www.pulse-eight.com/p/104/usb-hdmi-cec-adapter)
   - 付属のHDMI™ケーブル
   - 付属のUSBケーブル
 - CEC対応テレビ
