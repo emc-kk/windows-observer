@@ -4,7 +4,7 @@ Windows環境でテレビの電源状態を監視・制御するアプリケー�
 
 ## 動作環境・必要品
 - Windows 10/11
-- USB-CEC Adapter
+- [USB-CEC Adapter](https://www.pulse-eight.com/p/104/usb-hdmi-cec-adapter)
 - CEC対応テレビ
 
 ## セットアップ
