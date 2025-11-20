@@ -19,23 +19,22 @@ Setup.batファイルを管理者権限で実行
 
 ※ アンインストールする場合はUninstall.batを使用
 
-## 使用方法
+## API エンドポイント
 
-### API エンドポイント
-
-ヘルスチェック
 ```http
+# ヘルスチェック
 GET /health
-```
-
-テレビ電源状態取得
-```http
+# テレビ電源状態取得
 GET /tv-state
+# テレビ電源オン
+POST /tv-on
+# テレビ電源オフ
+POST /tv-off
 ```
 
-### サービス管理
+### プロセス管理
 
-#### PM2を使用する場合
+### PM2を使用する場合
 ```bash
 # サービス開始
 npm run pm2:start
@@ -53,7 +52,7 @@ npm run pm2:status
 npm run pm2:logs
 ```
 
-#### PowerShellスクリプトを使用する場合
+### PowerShellスクリプトを使用する場合
 ```powershell
 # サービス開始
 .\scripts\Manage.ps1 -Action start

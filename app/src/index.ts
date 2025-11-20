@@ -9,11 +9,12 @@ import cors from 'cors';
 import { createWriteStream } from 'fs';
 import { join } from 'path';
 import { config } from './config';
+import { log } from './utils/logger';
 import { rateLimit } from './middleware/rateLimit';
 import { GetHealth } from './routes/GetHealth';
 import { GetTvState } from './routes/GetTvState';
-import { execCecAsync } from './utils/execCecAsync';
-import { log } from './utils/logger';
+import { PostTvOn } from './routes/PostTvOn';
+import { PostTvOff } from './routes/PostTvOff';
 
 const app = express();
 
@@ -42,18 +43,8 @@ if (process.env.NODE_ENV !== 'production') {
 // ルート設定
 app.get('/health', GetHealth);
 app.get('/tv-state', GetTvState);
-app.get('/tv-on', GetTvState);
-app.get('/tv-off', GetTvState);
-app.get('/test', async (_, res) => {
-  try {
-    const output = await execCecAsync('pow 0');
-    log('info', 'CEC テストコマンド実行', { output });
-    return res.status(200).json({ output });
-  } catch (error) {
-    log('error', 'CEC テストコマンド失敗', { error });
-    return res.status(500).json({ error: 'Internal Server Error' });
-  }
-});
+app.post('/tv-on', PostTvOn);
+app.post('/tv-off', PostTvOff);
 
 // サーバー起動
 app.listen(config.PORT, () => {

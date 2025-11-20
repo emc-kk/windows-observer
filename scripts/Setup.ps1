@@ -15,11 +15,17 @@ function Get-EnvValue {
 
   if (!(Test-Path $FilePath)) { return $null }
 
-  $content = Get-Content $FilePath -ErrorAction SilentlyContinue
+  # UTF-8で読み込み
+  $content = Get-Content $FilePath -Encoding UTF8 -ErrorAction SilentlyContinue
   foreach ($line in $content) {
     $line = $line.Trim()
     if ($line -match "^$Key\s*=\s*(.*)$") {
-      return $matches[1].Trim('"')
+      $value = $matches[1].Trim().Trim('"')
+      # 空文字列の場合はnullを返す
+      if ([string]::IsNullOrWhiteSpace($value)) {
+        return $null
+      }
+      return $value
     }
   }
   return $null

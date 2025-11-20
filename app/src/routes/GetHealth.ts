@@ -16,11 +16,9 @@ export const GetHealth = async (_: Request, res: Response): Promise<void> => {
   const memoryUsage = process.memoryUsage();
   const memoryUsageMb = Math.round(memoryUsage.heapUsed / 1024 / 1024);
   const memoryTotalMb = Math.round(memoryUsage.heapTotal / 1024 / 1024);
-  const cmmHealthy = true; // TODO: CMMの状態チェック
-  const statusCode = cmmHealthy ? 200 : 503;
 
   const health: HealthResponse = {
-    ok: cmmHealthy,
+    ok: true,
     timestamp,
     uptime,
     memory: {
@@ -29,5 +27,5 @@ export const GetHealth = async (_: Request, res: Response): Promise<void> => {
     },
   };
 
-  res.status(statusCode).json(health);
+  res.status(200).json(health);
 };

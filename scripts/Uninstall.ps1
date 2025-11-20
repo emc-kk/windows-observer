@@ -12,27 +12,20 @@ function Uninstall-LibCEC {
   try {
     Write-Host "libCEC のアンインストールを試行中..."
 
-    # インストール済みのlibCECを検索
-    $libcecProducts = Get-WmiObject -Class Win32_Product | Where-Object { $_.Name -like "*libCEC*" }
+    $uninstallExe = "C:\Program Files (x86)\Pulse-Eight\USB-CEC Adapter\uninstall_libcec.exe"
 
-    if ($libcecProducts) {
-      foreach ($product in $libcecProducts) {
-        Write-Host "libCEC を削除中: $($product.Name) (バージョン: $($product.Version))"
-        $result = $product.Uninstall()
-
-        if ($result.ReturnValue -eq 0) {
-          Write-Host "libCEC のアンインストールが完了しました: $($product.Name)"
-        } else {
-          Write-Warning "libCEC のアンインストールに失敗しました: ReturnValue = $($result.ReturnValue)"
-        }
-      }
+    if (Test-Path $uninstallExe) {
+      Write-Host "アンインストーラーを検出: $uninstallExe" -ForegroundColor Green
+      Start-Process -FilePath $uninstallExe -ArgumentList "/S" -Wait -NoNewWindow
+      Write-Host "libCEC のアンインストールが完了しました"
       return $true
     } else {
-      Write-Host "libCEC はインストールされていません。"
+      Write-Host "libCEC のアンインストーラーが見つかりませんでした。"
       return $true
     }
   } catch {
     Write-Warning "libCEC のアンインストール中にエラーが発生しました: $_"
+    Write-Host "手動でコントロールパネルからアンインストールしてください。"
     return $false
   }
 }
