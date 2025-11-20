@@ -29,6 +29,12 @@ windows-observerフォルダをUSBフォルダから開いて、Setup.batを右�
 
 <img src="https://github.com/user-attachments/assets/da41a907-dd8b-44d1-9463-aab2098baa96" width="500px">
 
+承認モーダルが出てくるのではいを押下
+
+<img src="https://github.com/user-attachments/assets/077c404b-dafa-42a2-b733-1906a2a72e44" width="500px">
+
+ターミナルが開き処理が走るので終了するまで待機してください
+
 ## 4. 動作確認
 セットアップが終わったらエンドポイントから動作確認可能です
 
